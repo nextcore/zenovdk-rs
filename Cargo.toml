@@ -2,6 +2,13 @@
 name = "zenovdk"
 version = "0.1.0"
 edition = "2024"
+description = "High-performance, runtime-agnostic Video Development Kit (VDK) for parsing RTSP stream inputs and muxing them into fragmented MP4 (fMP4/MSE) or MPEG-TS formats."
+license = "MIT"
+repository = "https://github.com/nextcore/zenovdk-rs"
+documentation = "https://docs.rs/zenovdk"
+readme = "README.md"
+keywords = ["rtsp", "fmp4", "mpegts", "streaming", "video"]
+categories = ["multimedia::video", "parser-implementations"]
 
 [dependencies]
 bytes = "1.5.0" # Efficient zero-copy binary buffer handling
