@@ -71,7 +71,6 @@ impl Mp4Muxer {
 
         // 2. Write moov box skeleton (simple raw builder to avoid heavy external crates)
         let mut moov = Vec::new();
-        moov.extend_from_slice(b"moov");
 
         // Write mvhd
         let mvhd = [
@@ -92,31 +91,9 @@ impl Mp4Muxer {
         ];
         moov.extend_from_slice(&mvhd);
 
-        // Write mvex (movie extends box for fragmented MP4 support)
-        let mut mvex = Vec::new();
-        mvex.extend_from_slice(b"\x00\x00\x00\x10mehd\x00\x00\x00\x00\x00\x00\x00\x00"); // mehd
-        for stream in &self.streams {
-            let mut trex = vec![0, 0, 0, 32];
-            trex.extend_from_slice(b"trex");
-            trex.extend_from_slice(&[0, 0, 0, 0]); // version & flags
-            trex.extend_from_slice(&stream.track_id.to_be_bytes()); // track_id
-            trex.extend_from_slice(&[0, 0, 0, 1]); // default_sample_description_index
-            trex.extend_from_slice(&[0, 0, 0, 0]); // default_sample_duration
-            trex.extend_from_slice(&[0, 0, 0, 0]); // default_sample_size
-            trex.extend_from_slice(&[0, 0, 0, 0]); // default_sample_flags
-            mvex.extend_from_slice(&trex);
-        }
-        
-        let mvex_len = (mvex.len() + 8) as u32;
-        let mut mvex_box = mvex_len.to_be_bytes().to_vec();
-        mvex_box.extend_from_slice(b"mvex");
-        mvex_box.extend_from_slice(&mvex);
-        moov.extend_from_slice(&mvex_box);
-
         // Write tracks (trak)
         for stream in &self.streams {
             let mut trak = Vec::new();
-            trak.extend_from_slice(b"trak");
             
             // tkhd (track header)
             let mut tkhd = vec![0, 0, 0, 92];
@@ -142,7 +119,6 @@ impl Mp4Muxer {
 
             // mdia (media box)
             let mut mdia = Vec::new();
-            mdia.extend_from_slice(b"mdia");
             
             // mdhd
             let mut mdhd = vec![0, 0, 0, 32];
@@ -159,17 +135,16 @@ impl Mp4Muxer {
                 CodecType::AAC => b"soun",
                 _ => b"hint",
             };
-            let mut hdlr = vec![0, 0, 0, 45];
+            let mut hdlr = vec![0, 0, 0, 37];
             hdlr.extend_from_slice(b"hdlr");
-            hdlr.extend_from_slice(&[0; 8]); // version, flags, component type
-            hdlr.extend_from_slice(sub_type);
-            hdlr.extend_from_slice(&[0; 12]); // reserved
-            hdlr.extend_from_slice(b"VideoHandler\x00"); // name
+            hdlr.extend_from_slice(&[0; 8]); // version, flags, component type (8 bytes)
+            hdlr.extend_from_slice(sub_type); // (4 bytes, e.g. "vide")
+            hdlr.extend_from_slice(&[0; 12]); // manufacturer/flags/mask (12 bytes)
+            hdlr.extend_from_slice(b"GG\x00\x00\x00"); // name (5 bytes)
             mdia.extend_from_slice(&hdlr);
 
             // minf (media info)
             let mut minf = Vec::new();
-            minf.extend_from_slice(b"minf");
             
             match stream.codec_type {
                 CodecType::H264 | CodecType::H265 => {
@@ -183,18 +158,17 @@ impl Mp4Muxer {
 
             // dinf & dref
             let dref = [
-                0x00, 0x00, 0x00, 0x1c, 0x64, 0x69, 0x6e, 0x66, // size & "dinf"
-                0x00, 0x00, 0x00, 0x14, 0x64, 0x72, 0x65, 0x66, // size & "dref"
+                0x00, 0x00, 0x00, 0x24, 0x64, 0x69, 0x6e, 0x66, // size (36) & "dinf"
+                0x00, 0x00, 0x00, 0x1c, 0x64, 0x72, 0x65, 0x66, // size (28) & "dref"
                 0x00, 0x00, 0x00, 0x00, // version, flags
                 0x00, 0x00, 0x00, 0x01, // entry count
-                0x00, 0x00, 0x00, 0x0c, 0x75, 0x72, 0x6c, 0x20, // size & "url "
+                0x00, 0x00, 0x00, 0x0c, 0x75, 0x72, 0x6c, 0x20, // size (12) & "url "
                 0x00, 0x00, 0x00, 0x01, // flags (self-contained)
             ];
             minf.extend_from_slice(&dref);
 
             // stbl (sample table)
             let mut stbl = Vec::new();
-            stbl.extend_from_slice(b"stbl");
             
             // stsd (sample description)
             let mut stsd_payload = Vec::new();
@@ -204,7 +178,7 @@ impl Mp4Muxer {
             match stream.codec_type {
                 CodecType::H264 => {
                     let mut avc1 = Vec::new();
-                    avc1.extend_from_slice(&(86 + stream.codec_data.len() as u32).to_be_bytes()); // length
+                    avc1.extend_from_slice(&(94 + stream.codec_data.len() as u32).to_be_bytes()); // length
                     avc1.extend_from_slice(b"avc1");
                     avc1.extend_from_slice(&[0; 6]); // reserved
                     avc1.extend_from_slice(&[0, 1]); // data ref index
@@ -229,7 +203,7 @@ impl Mp4Muxer {
                 }
                 CodecType::H265 => {
                     let mut hvc1 = Vec::new();
-                    hvc1.extend_from_slice(&(86 + stream.codec_data.len() as u32).to_be_bytes()); // length
+                    hvc1.extend_from_slice(&(94 + stream.codec_data.len() as u32).to_be_bytes()); // length
                     hvc1.extend_from_slice(b"hvc1");
                     hvc1.extend_from_slice(&[0; 6]); // reserved
                     hvc1.extend_from_slice(&[0, 1]); // data ref index
@@ -254,7 +228,7 @@ impl Mp4Muxer {
                 }
                 CodecType::AAC => {
                     let mut mp4a = Vec::new();
-                    mp4a.extend_from_slice(&(36 + stream.codec_data.len() as u32).to_be_bytes()); // length
+                    mp4a.extend_from_slice(&(44 + stream.codec_data.len() as u32).to_be_bytes()); // length
                     mp4a.extend_from_slice(b"mp4a");
                     mp4a.extend_from_slice(&[0; 6]); // reserved
                     mp4a.extend_from_slice(&[0, 1]); // data ref index
@@ -281,11 +255,12 @@ impl Mp4Muxer {
             stsd_box.extend_from_slice(&stsd_payload);
             stbl.extend_from_slice(&stsd_box);
 
-            // Empty table placeholders (stts, stsc, stsz, stco, stss)
+            // Empty table placeholders (stts, stsc, stss, stco, stsz)
             stbl.extend_from_slice(b"\x00\x00\x00\x10stts\x00\x00\x00\x00\x00\x00\x00\x00"); // stts
             stbl.extend_from_slice(b"\x00\x00\x00\x10stsc\x00\x00\x00\x00\x00\x00\x00\x00"); // stsc
-            stbl.extend_from_slice(b"\x00\x00\x00\x10stsz\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"); // stsz
+            stbl.extend_from_slice(b"\x00\x00\x00\x10stss\x00\x00\x00\x00\x00\x00\x00\x00"); // stss
             stbl.extend_from_slice(b"\x00\x00\x00\x10stco\x00\x00\x00\x00\x00\x00\x00\x00"); // stco
+            stbl.extend_from_slice(b"\x00\x00\x00\x14stsz\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"); // stsz
 
             let stbl_len = (stbl.len() + 8) as u32;
             let mut stbl_box = stbl_len.to_be_bytes().to_vec();
@@ -311,6 +286,27 @@ impl Mp4Muxer {
             trak_box.extend_from_slice(&trak);
             moov.extend_from_slice(&trak_box);
         }
+
+        // Write mvex (movie extends box for fragmented MP4 support)
+        let mut mvex = Vec::new();
+        mvex.extend_from_slice(b"\x00\x00\x00\x10mehd\x00\x00\x00\x00\x00\x00\x00\x00"); // mehd
+        for stream in &self.streams {
+            let mut trex = vec![0, 0, 0, 32];
+            trex.extend_from_slice(b"trex");
+            trex.extend_from_slice(&[0, 0, 0, 0]); // version & flags
+            trex.extend_from_slice(&stream.track_id.to_be_bytes()); // track_id
+            trex.extend_from_slice(&[0, 0, 0, 1]); // default_sample_description_index
+            trex.extend_from_slice(&[0, 0, 0, 0]); // default_sample_duration
+            trex.extend_from_slice(&[0, 0, 0, 0]); // default_sample_size
+            trex.extend_from_slice(&[0, 0, 0, 0]); // default_sample_flags
+            mvex.extend_from_slice(&trex);
+        }
+        
+        let mvex_len = (mvex.len() + 8) as u32;
+        let mut mvex_box = mvex_len.to_be_bytes().to_vec();
+        mvex_box.extend_from_slice(b"mvex");
+        mvex_box.extend_from_slice(&mvex);
+        moov.extend_from_slice(&mvex_box);
 
         let moov_len = (moov.len() + 8) as u32;
         let mut moov_box = moov_len.to_be_bytes().to_vec();
@@ -365,7 +361,6 @@ impl Mp4Muxer {
 
         // 1. Build moof box
         let mut moof = Vec::new();
-        moof.extend_from_slice(b"moof");
 
         // mfhd
         let mut mfhd = vec![0, 0, 0, 16];
@@ -376,7 +371,6 @@ impl Mp4Muxer {
 
         // traf (track fragment)
         let mut traf = Vec::new();
-        traf.extend_from_slice(b"traf");
         
         // tfhd
         let mut tfhd = vec![0, 0, 0, 20];
@@ -395,7 +389,6 @@ impl Mp4Muxer {
 
         // trun
         let mut trun = Vec::new();
-        trun.extend_from_slice(b"trun");
         trun.extend_from_slice(&[0, 0x00, 0x0b, 0x05]); // version, flags: data-offset, first-sample-flags, size, duration, cts present
         trun.extend_from_slice(&(self.moof_entries.len() as u32).to_be_bytes());
         
@@ -408,9 +401,6 @@ impl Mp4Muxer {
         for entry in &self.moof_entries {
             trun.extend_from_slice(&entry.duration.to_be_bytes());
             trun.extend_from_slice(&entry.size.to_be_bytes());
-            
-            let flags = if entry.is_keyframe { 0x02000000u32 } else { 0x01010000u32 };
-            trun.extend_from_slice(&flags.to_be_bytes());
             trun.extend_from_slice(&entry.cts.to_be_bytes());
             
             total_duration += entry.duration as u64;
@@ -435,7 +425,7 @@ impl Mp4Muxer {
 
         // Update trun data_offset (offset is moof length + 8 bytes of mdat header)
         let data_offset = (moof_box.len() + 8) as u32;
-        let offset_pos = 8 + 16 + 20 + 20 + 8 + 8 + data_offset_idx; // absolute index in moof_box
+        let offset_pos = 80 + data_offset_idx; // absolute index in moof_box
         if offset_pos + 4 <= moof_box.len() {
             moof_box[offset_pos..offset_pos+4].copy_from_slice(&data_offset.to_be_bytes());
         }
