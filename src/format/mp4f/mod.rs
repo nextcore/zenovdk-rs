@@ -204,7 +204,7 @@ impl Mp4Muxer {
                 CodecType::H265 => {
                     let mut hvc1 = Vec::new();
                     hvc1.extend_from_slice(&(94 + stream.codec_data.len() as u32).to_be_bytes()); // length
-                    hvc1.extend_from_slice(b"hvc1");
+                    hvc1.extend_from_slice(b"hev1");
                     hvc1.extend_from_slice(&[0; 6]); // reserved
                     hvc1.extend_from_slice(&[0, 1]); // data ref index
                     hvc1.extend_from_slice(&[0; 16]); // pre-defined, reserved
@@ -344,8 +344,8 @@ impl Mp4Muxer {
         self.mdat_buffer.extend_from_slice(&pkt.data);
         self.sample_index += 1;
 
-        // If fragment limit is reached or we got a new keyframe after some frames, wrap it up
-        if self.sample_index > max_frames && is_keyframe {
+        // Flush every max_frames samples (matching Go writePacketV2 behavior)
+        if self.sample_index > max_frames {
             let result = self.finalize(pkt.idx);
             return (true, result);
         }
